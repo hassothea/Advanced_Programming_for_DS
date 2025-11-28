@@ -1,0 +1,440 @@
+---
+title: "🌳 Decision Trees"
+subtitle: "<br> [ITM 390 004: Machine Learning]{.blue} <br>
+[![](./img/AUPP_Logo.png){width=150px}](https://www.aupp.edu.kh/){target='_blank'} <br>"
+author: "[Lecturer: Dr. Sothea HAS]{.blue}"
+toc-depth: 2
+format:
+    revealjs:
+        touch: true
+        controls: true
+        slide-number: c/t
+        logo: './img/AUPP_Logo.png'
+        theme: [default, custom.scss]
+        css: styles.css
+        include-in-header:
+            - text: |
+                <style>
+                #title-slide .title {
+                    font-size: 2em;
+                }
+                </style>
+        menu: false
+linestretch: 1em
+font-size: 10pt
+---
+
+
+## 🗺️ Content
+
+- [Motivation & Introduction]{.section .secbr} <br>
+
+- [Decision Trees]{.section .secbr} <br>
+
+- [Key Hyperparameters of Trees]{.section .secbr} <br>
+
+- [Application]{.section .secbr} <br>
+
+
+# Motivation & Introduction {background-color="#345a8b"} 
+
+## Motivation & Introduction
+### Motivation
+:::{style="font-size: 60%"}
+- $k$-NN is a nonparametric model that predicts any new data point $\color{blue}{\text{x}}$ based on
+    - Identifying input data $\color{red}{\text{x}_{(i)}}\approx\color{blue}{\text{x}}$,
+    - Prediction is based on the label $\color{red}{y_{(i)}}$ of those neighbors.
+
+:::{.columns}
+:::{.column width="50%"}
+- [**Regression:**]{.light-blue}
+$$\begin{align*}\color{blue}{\hat{y}}&=\frac{1}{k}\sum_{j=1}^k\color{red}{y_{(i)}}\\
+&=\text{Average $\color{red}{y_{(i)}}$ among the $k$ neighbors}.\end{align*}$$
+
+- [**Classification with $M$ classes:**]{.light-red}
+$$\begin{align*}\color{blue}{\hat{y}}&=\arg\max_{1\leq m\leq M}\frac{1}{k}\sum_{j=1}^k\mathbb{1}_{\{\color{red}{y_{(i)}}=m\}}\\
+&=\text{Majority group among the $k$ neighbors.}\end{align*}$$
+:::
+:::{.column width="50%"}
+:::{.fragment .center}
+```{python}
+#| echo: false
+#| fig-align: "center"
+import numpy as np
+np.random.seed(42)
+X1 = np.random.uniform(-1,1,size=(30, 2))
+y1 = 1 * (X1[:,1] > X1[:,0] ** 3 - X1[:,0] + np.random.normal(0,0.5, size=30))
+cir_theta = np.linspace(0,2*np.pi, 50)
+cir_df = np.column_stack([np.cos(cir_theta)*0.47, np.sin(cir_theta)*0.47])
+cols = {0: "blue", 1: "red"}
+hover_text = [f'x1: {np.round(x1,2)}<br> x2: {np.round(x2,2)}<br> Target: {np.round(y,2)}' for x1, x2, y in zip(X1[:,0], X1[:,1], X1[:,0] ** 3 - X1[:,0])]
+import plotly.graph_objects as go
+fig1 = go.Figure(go.Scatter(
+    x=X1[:,0], y=X1[:,1], 
+    mode="markers", marker=dict(color=[cols[i] for i in y1], size=10), 
+    name="Training data",
+    text=hover_text,
+    hoverinfo='text'))
+fig1.add_trace(go.Scatter(
+    x=[0], y=[0], name="Test point", 
+    mode="markers", marker=dict(color="black", size=13)))
+fig1.add_trace(go.Scatter(
+    x=cir_df[:,0], y=cir_df[:,1], 
+    mode="lines", line=dict(dash="dash", color="black"),
+    #visible='legendonly', 
+    name="Neighborhood"))
+fig1.update_layout(title="An example of 5NN", width=350, height=200)
+fig1.show()
+```
+
+```{python}
+#| echo: false
+#| fig-align: "center"
+cir_theta = np.linspace(0,2*np.pi, 50)
+cir_df = np.column_stack([np.cos(cir_theta)*0.7, np.sin(cir_theta)*0.7])
+fig_2 = go.Figure(data=[
+    fig1.data[0],
+    fig1.data[1]
+])
+fig_2.add_trace(go.Scatter(x=cir_df[:,0], y=cir_df[:,1], mode="lines", line=dict(dash="dash", color="black"), name="Neighborhood"))
+fig_2.update_layout(title="The same example but with 12NN", width=350, height=200)
+fig_2.show()
+```
+:::
+:::
+:::
+:::
+
+
+## Motivation & Introduction
+### Introduction
+:::{style="font-size: 80%" .incremental}
+:::{.columns}
+:::{.column width="63%"}
+- $k$-NN defines `Neighbors` based on the Euclidean distance between two points.
+
+- The main leading question to the development of `Decision Tree` methods is
+
+:::{.r-fit-text}
+- Is there other way to define `Neighbor`?
+
+![](https://c8.alamy.com/comp/DXT6BF/a-block-of-suburban-houses-with-colourful-roofs-DXT6BF.jpg){height="250" fig-align="center" .fragment}
+
+:::
+:::
+:::{.column width="37%"}
+```{python}
+import numpy as np
+import pandas as pd
+import seaborn as sns
+colors = sns.color_palette("Set2")
+n = 200
+np.random.seed(42)
+x1 = np.random.uniform(-3,3,size=(n,2))
+x1 = np.column_stack([np.ones(n), x1])
+beta = np.array([0.1, -1, 1])
+y = x1 @ beta + np.random.normal(0,1,n)
+y_ = (y > 0) * 1
+y = np.array(y_, dtype=object)
+data_toy1 = pd.DataFrame({
+    'x1' : x1[:,1],
+    'x2' : x1[:,2],
+    'y': y
+})
+data_toy1.sample(11, random_state=17).style.hide()
+```
+
+:::
+:::
+:::
+
+
+# 🌳 Decision Trees {background-color="#345a8b"} 
+
+
+```{python}
+path = "C:/Users/hasso/.cache/kagglehub/datasets/johnsmith88/heart-disease-dataset/versions/2"
+```
+
+## 🌳 Decision Trees ($k$-NN) {auto-animate="true"}
+### CART: Classification And Regression Trees
+:::{style="font-size:80%" .fragment}
+- In CART, "neighbors" are defined by [rectangular regions]{.light-blue} within inputs space.
+:::
+:::{.columns .fragment}
+:::{.column width="50%"}
+```{python}
+fig1.update_layout(width=480, height=350)
+fig1.show()
+```
+
+- Neighbors in $k$-NN are based on straight [**distance**]{.light-red}.
+:::
+:::{.column width="50%"}
+```{python}
+fig_tr = go.Figure(data=[
+    fig1.data[0],
+    fig1.data[1]
+])
+L1 = np.array([[-1.1, 1.1], [0.375, 0.375]])
+L2 = np.array([[0.3, 0.3], [-1, 0.375]])
+L3 = np.array([[0.3, 1.1], [-0.3, -0.3]])
+fig_tr.add_trace(go.Scatter(x=L1[0,:], y=L1[1,:], mode='lines', line=dict(color="black", dash="dot"), name="1st split"))
+fig_tr.add_trace(go.Scatter(x=L2[0,:], y=L2[1,:], mode='lines', line=dict(color="black", dash="dot"), name="2nd split"))
+fig_tr.add_trace(go.Scatter(x=L3[0,:], y=L3[1,:], mode='lines', line=dict(color="black", dash="dot"), name="3rd split"))
+fig_tr.update_layout(title="Partitions of input space", width=460, height=350)
+fig_tr.show()
+```
+
+- Neighbors in CART are based on [**blocks**]{.light-blue}.
+:::
+:::
+
+## 🌳 Decision Trees
+### CART: Classification And Regression Trees
+:::{style="font-size:80%"}
+:::{.columns}
+:::{.column width="50%"}
+:::{style="font-size: 80%"}
+```{python}
+fig_tr.show()
+```
+
+:::{.incremental}
+- Building a **CART** consists of:
+    - Start at root (no split yet).
+    - **Recursively split** into smaller **regions**.
+    - [**Stop**]{.light-red} when a stopping [**criterion**]{.light-red} is met.
+- [**Regions**]{.light-blue} $\color{blue}{\Rightarrow}$ [**neighbors**]{.light-blue} $\color{blue}{\Rightarrow}$ [**prediction**]{.light-blue}.
+:::
+:::
+:::
+:::{.column width="50%"}
+:::{.incremental style="font-size: 80%"}
+
+- At each split, 
+    - We try column $\color{red}{X_j}$ at threshold $\color{red}{a}\in\mathbb{R}$ into two subregions $R_1$ and $R_2$.
+    - We **decision** to split along $\color{red}{X_j}$ at $\color{red}{a}$ so that $R_1$ and $R_2$ are [**as pure as possible**]{.light-blue}.
+- [**Impurity**]{.light-red} is defined by impurity measures:
+    - [Regression: Within-region variation]{.light-red} $\sum_{y\in R_1}(y-\overline{y}_1)^2+\sum_{y\in R_2}(y-\overline{y}_2)^2.$
+    - [Classification]{.light-blue} ($M$ classes):
+        - **Missclassification error** $=1-\hat{p}_{k^*}$ where $k^*$ is the majority class.
+        - **Gini impurity** $=\sum_{k=1}^M\hat{p}_{k}(1-\hat{p}_{k})$.
+        - **Entropy** $=-\sum_{k}\hat{p}_{k}\log(\hat{p}_{k})$ where $\hat{p}_{k}$: proportion of class $k$ in region $R$.
+
+:::
+:::
+:::
+:::
+
+## 🌳 Decision Trees
+### CART: Classification And Regression Trees
+:::{style="font-size:80%"}
+:::{.columns}
+:::{.column width="50%"}
+:::{style="font-size: 80%"}
+```{python}
+fig_tr.show()
+```
+
+- Building a **CART** consists of:
+    - Start at root (no split yet).
+    - **Recursively split** into smaller **regions**.
+    - [**Stop**]{.light-red} when a stopping [**criterion**]{.light-red} is met.
+- [**Regions**]{.light-blue} $\color{blue}{\Rightarrow}$ [**neighbors**]{.light-blue} $\color{blue}{\Rightarrow}$ [**prediction**]{.light-blue}.
+:::
+:::
+:::{.column width="50%"}
+:::{style="font-size: 80%"}
+- At each split, 
+    - We try column $\color{red}{X_j}$ at threshold $\color{red}{a}\in\mathbb{R}$ into two subregions $R_1$ and $R_2$.
+    - We **decision** to split along $\color{red}{X_j}$ at $\color{red}{a}$ so that $R_1$ and $R_2$ are [**as pure as possible**]{.light-blue}.
+- [**Impurity**]{.light-red} is defined by impurity measures:
+
+![The [**smaller**]{.light-blue} $\Leftrightarrow$ the [**purer**]{.light-blue} the regions!](img/Impurity.png){height="230" width="500" fig-align="center"}
+
+:::
+:::
+:::
+:::
+
+## 🌳 Decision Trees
+### CART: Classification And Regression Trees
+:::{style="font-size:80%"}
+:::{.columns}
+:::{.column width="50%" style="font-size: 80%"}
+```{python}
+fig_tr.show()
+```
+
+:::{style="font-size: 75%" .incremental}
+- First split:
+    - $\text{En}(R_1)=-1\log(1)=0$
+    - $\begin{align*}\\ \text{En}(R_2)&=-\color{blue}{16/19\log(16/19)}-\color{red}{3/19\log(3/19)}\\ &=0.436.\end{align*}$
+    - $\text{En}_1=(0)11/30+(0.436)19/30=0.276.$
+    - **Information gain:** $\text{En}_0-\text{En}_1.$
+:::
+:::
+:::{.column width="50%" style="font-size: 80%" .fragment .incremental}
+![](./img/tree.png){fig-align="center" height="320"}
+
+- `Prediction rule:` 
+    - **Regression:** $\color{blue}{\hat{y}}=$ [**average**]{.light-blue} targets within the same block.
+    - **Classification:** $\color{blue}{\hat{y}}=$ [**majority vote**]{.light-blue} among points within the same block.
+:::
+:::
+:::
+
+## 🌳 Decision Trees
+### Hyperparameters of CART and Influence
+:::{style="font-size:80%"}
+:::{.columns}
+:::{.column width="50%" style="font-size: 78%" .incremental}
+```{python}
+fig_tr.show()
+```
+
+- `Hyperparameters:` 
+    - `max_depth`
+    - `max_features`
+    - `min_samples_split`
+    - `min_samples_leaf`
+    - `criterion`... [see explanation [here](https://www.google.com/search?q=hyperparameters+of+cart+and+its+meaning&sca_esv=8ae5a86d4bb72295&sxsrf=AE3TifMqWjlRUFjepn7SaittWlTmMNpevA%3A1760029429473&udm=50&fbs=AIIjpHxU7SXXniUZfeShr2fp4giZ1Y6MJ25_tmWITc7uy4KIemkjk18Cn72Gp24fGkjjh6wQFVCbKXb4P6swJy4x5wjmC_909EqiJuKoJVBAt1bQqxuAxTVm5FaXw1YXOj1toa8WPxcw1gn6LYXewwLEtDLrjlF1DF5gsE1oM13IUcRi9WoWLy0RheFkcZrCqX8fIc9hqBDd7QkjIMco9MHF-AJTiny_Vw&aep=1&ntc=1&sa=X&ved=2ahUKEwiTpMDHzJeQAxU0R2wGHXuzBxIQ2J8OegQICxAE&biw=1707&bih=825&dpr=2.25&mtid=_ernaJeDFp2sseMP2ujAgAI&mstk=AUtExfAdpaepXuD-MYEHYZ6_074JT7g6h2OkwWVTZPOcC3xrQ86TtxA3Dl_Sq1_LcISq1mOxnqrijvyfPc3QePzxV2x6VKWcgumwZ5xpthnl5ETXr4VjH37ILXC3qM14hNDrVeZu1Qtp4uMR0VfkQ68FZWMm2awkeb-mYblQO-vw6AJMLd1Mwwx-89pNwFLbOhwsebLroj3XFMqCyacA4zdxByym4gaKucBShBo3HWWgUVCY45tPjM0rzkkOeoy0WSrg08wfOn0fKXCrX1cpYEDiGAddc5n4TCJAqKyfVIvgKtWwdR0YnL8rUXbyvrJL4uYtt5PWoTpBEKGJPw&csuir=1){target='_blank'}]
+:::
+:::{.column width="50%" style="font-size: 80%" .incremental}
+![](./img/tree.png){fig-align="center" height="330"}
+
+- [**Deep trees**]{.light-red} $\Leftrightarrow$ [**less neighbors**]{.light-red} $\Rightarrow$ [**Overfitting**]{.light-red}.
+- In this case of [**smaller leaves**]{.light-red}, it's similar to smaller $k$ in $k$-NN.
+- These hyperparameters should be [**fine-tuned**]{.light-blue} using **CV** to [**optimize its performance**]{.light-blue}.
+:::
+:::
+:::
+
+## 🌳 Decision Trees {visibility="hidden"}
+### Pruning tree
+:::{style="font-size:80%"}
+:::{.columns}
+:::{.column width="50%" style="font-size: 80%"}
+```{python}
+fig_tr.show()
+```
+
+- Hyperparameter of a tree: depth, minimum leave size, impurity measures, maximum features considered at each split...
+- Deep trees $\Leftrightarrow$ high variance $\Rightarrow$ Overfitting.
+- **Pruning** a tree = removing branches with small improvement.
+:::
+:::{.column width="50%" style="font-size: 80%"}
+![](./img/tree.png)
+
+- Pruning criterion to be minimized: $C_{\alpha}(T)=\sum_{j=1}^{|T|}N_j\text{Imp}_j(T)+\alpha|T|$ where 
+    - $|T|$: num. of leaves of the tree $T$ and
+    - $\text{Imp}_j(T)$: the impurity at leave $j$-th.
+:::
+:::
+:::
+
+## 🌳 Decision Trees
+### In action: [Heart Disease Dataset](https://www.kaggle.com/datasets/johnsmith88/heart-disease-dataset){target='_blank'}
+:::{style="font-size: 85%"}
+- We drop duplicated data and use `GridsearchCV` with $K=10$ to search over the hyperparameters:
+    - Impurity (`criterion`)
+    - Mininum size of leave nodes (`min_samples_leaf`)
+    - Maximum features (`max_features`).
+:::
+
+:::{style="font-size: 90%"}
+```{python}
+#| echo: true
+#| code-fold: true
+data = pd.read_csv(path + "/heart.csv")
+quan_vars = ['age','trestbps','chol','thalach','oldpeak']
+qual_vars = ['sex','cp','fbs','restecg','exang','slope','ca','thal','target']
+
+# Convert to correct types
+for i in quan_vars:
+  data[i] = data[i].astype('float')
+for i in qual_vars:
+  data[i] = data[i].astype('category')
+
+# Train test split
+from sklearn.model_selection import train_test_split
+data_no_dup = data.drop_duplicates()
+X, y = data_no_dup.iloc[:,:-1], data_no_dup.iloc[:,-1]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+from sklearn.model_selection import GridSearchCV 
+from sklearn.tree import DecisionTreeClassifier 
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, ConfusionMatrixDisplay
+
+clf = DecisionTreeClassifier()
+param_grid = {'criterion': ['gini', 'entropy'],
+              'min_samples_leaf': [2, 5, 10, 16, 20, 25, 30],
+              'max_features': ['auto', 'sqrt', 'log2', 2, 5, 10, X_train.shape[1]] }
+grid_search = GridSearchCV(estimator=clf, param_grid=param_grid, cv=10, scoring='accuracy', n_jobs=-1) 
+grid_search.fit(X_train, y_train)
+
+best_model = grid_search.best_estimator_ 
+y_pred = best_model.predict(X_test)
+
+test_tr = pd.DataFrame(
+    data={'Accuracy': accuracy_score(y_test, y_pred),
+          'Precision': precision_score(y_test, y_pred),
+          'Recall': recall_score(y_test, y_pred),
+          'F1-score': f1_score(y_test, y_pred)},
+    columns=["Accuracy", "Precision", "Recall", "F1-score"],
+    index=["Tree"])
+test_tr = pd.concat([test_tr, pd.DataFrame(
+    data={'Accuracy': 0.885246,
+          'Precision': 0.882353,
+          'Recall': 0.909091,
+          'F1-score': 0.909091},
+    columns=["Accuracy", "Precision", "Recall", "F1-score"],
+    index=["16-NN"])], axis=0)
+print(f"Best hyperparameters: {grid_search.best_params_}")
+test_tr
+```
+:::
+
+## 🌳 Decision Trees
+### Summary
+:::{style="font-size: 70%"}
+- CART is a nonparametric model that define neighbors based on small rectangular regions.
+:::
+:::{.columns}
+:::{.column width="50%" style="font-size: 70%"}
+- They are **not sensitive to scaling**.
+- The key parameters includes 
+    - **depth**, **minimum leave size**, 
+    - **impurity measures**, **number of splits**, 
+    - **maximum features considered at each split**... 
+- They should be fine-tuned to optimize the model performance.
+- It can handle categorical data as well.
+- Just ike $K$-NN with small $K$, deep trees are prone to overfitting. 
+:::
+:::{.column width="50%"}
+
+```{python}
+fig_tr.update_layout(width=500, height=400)
+fig_tr.show()
+```
+:::
+:::
+
+:::{.center}
+
+## 🥳 Yeahhhh....  {background-image="https://hassothea.github.io/Data_Analysis_AUPP/Slides/img/end_page.jpg" background-opacity="0.3"}
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+
+### Let's Party... 🥂
+:::
+
