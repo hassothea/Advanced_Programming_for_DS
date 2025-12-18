@@ -13,6 +13,13 @@ $presentation-heading-text-transform: capitalize;
   padding-left: 0.5em;
 }
 
+/* Move the hamburger icon slightly up and in from the corner */
+.reveal .slide-menu-button {
+    left: 20px !important;
+    bottom: 20px !important;
+    font-size: 0.8em !important; /* Make it "small" */
+}
+
 /*-- scss:logo --*/
 
 .reveal .slide-logo {
@@ -35,3 +42,4 @@ $presentation-heading-text-transform: capitalize;
   top: unset !important;
   color: #777777 !important;
 }
+
